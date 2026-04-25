@@ -10,6 +10,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Tbtd@5007';
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+
 let storedData = { instructions: '', pdfTexts: [] };
 
 app.get('/api/instructions', (req, res) => {
@@ -28,16 +29,19 @@ app.post('/api/verify-password', (req, res) => {
 
 app.post('/api/ask', async (req, res) => {
   const { messages, systemPrompt } = req.body;
-  
-  console.log('📩 API Request:', { messages, systemPrompt });
-  console.log('🔑 Has API Key:', !!ANTHROPIC_API_KEY);
-  
+
+  // 1. التحقق من وجود المفتاح
   if (!ANTHROPIC_API_KEY) {
     console.error('❌ Missing ANTHROPIC_API_KEY');
     return res.status(500).json({ error: 'API key غير موجود' });
   }
-  
+
   try {
+    console.log('📡 Calling Anthropic API...');
+    
+    // 2. استخدام النموذج الصحيح (تم إصلاح الخطأ هنا)
+    const modelToUse = 'claude-3-5-sonnet-20241022';
+
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -46,31 +50,33 @@ app.post('/api/ask', async (req, res) => {
         'anthropic-version': '2023-06-01'
       },
       body: JSON.stringify({
-        model: 'claude-3-5-sonnet-20241022',
+        model: modelToUse, // ✅ هنا الإصلاح: اسم واحد فقط
         max_tokens: 1000,
-        system: systemPrompt || 'أنت مساعد تعليمات الشركة',
+        system: systemPrompt || 'أنت مساعد تعليمات الشركة.',
         messages: messages || []
       })
     });
-    
-    console.log('📡 Response Status:', response.status);
-    
+
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error('❌ API Error:', errorText);
-      throw new Error(`API Error: ${response.status}`);
+      const errorData = await response.json().catch(() => ({}));
+      console.error('❌ API Error:', response.status, errorData);
+      
+      // لو الخطأ في المفتاح، ارسل رسالة واضحة للمستخدم
+      if (response.status === 401) {
+        return res.status(500).json({ 
+          error: 'خطأ في مفتاح الـ API (Unauthorized)',
+          details: 'تأكد أن المفتاح صحيح ومفعل في Vercel Environment Variables'
+        });
+      }
+      return res.status(response.status).json({ error: 'فشل الاتصال بـ Anthropic' });
     }
-    
+
     const data = await response.json();
-    console.log('✅ Success:', data);
     res.json(data);
-    
+
   } catch (err) {
-    console.error('💥 Error:', err.message);
-    res.status(500).json({ 
-      error: 'حدث خطأ',
-      details: err.message 
-    });
+    console.error('💥 Unexpected Error:', err);
+    res.status(500).json({ error: 'خطأ داخلي في الخادم', details: err.message });
   }
 });
 
@@ -78,5 +84,4 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// ✅ تصدير لـ Vercel (مش app.listen)
 module.exports = app;
