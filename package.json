@@ -1,0 +1,13 @@
+{
+  "name": "company-bot",
+  "version": "1.0.0",
+  "description": "مساعد تعليمات الشركة",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5"
+  }
+}
