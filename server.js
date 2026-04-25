@@ -9,18 +9,13 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Tbtd@5007';
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+// ⚠️ تم تغيير اسم المتغير ليعمل مع جوجل
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY; 
 
 let storedData = { instructions: '', pdfTexts: [] };
 
-app.get('/api/instructions', (req, res) => {
-  res.json(storedData);
-});
-
-app.post('/api/instructions', (req, res) => {
-  storedData = req.body;
-  res.json({ success: true });
-});
+app.get('/api/instructions', (req, res) => res.json(storedData));
+app.post('/api/instructions', (req, res) => { storedData = req.body; res.json({ success: true }); });
 
 app.post('/api/verify-password', (req, res) => {
   const { password } = req.body;
@@ -30,58 +25,50 @@ app.post('/api/verify-password', (req, res) => {
 app.post('/api/ask', async (req, res) => {
   const { messages, systemPrompt } = req.body;
 
-  // 1. التحقق من وجود المفتاح
-  if (!ANTHROPIC_API_KEY) {
-    console.error('❌ Missing ANTHROPIC_API_KEY');
-    return res.status(500).json({ error: 'API key غير موجود' });
+  if (!GEMINI_API_KEY) {
+    return res.status(500).json({ error: 'مفتاح GEMINI_API_KEY غير موجود' });
   }
 
   try {
-    console.log('📡 Calling Anthropic API...');
-    
-    // 2. استخدام النموذج الصحيح (تم إصلاح الخطأ هنا)
-    const modelToUse = 'claude-3-5-sonnet-20241022';
+    // تجهيز البيانات بصيغة Google Gemini
+    const contents = messages.map(msg => ({
+      role: msg.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: msg.content }]
+    }));
 
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model: modelToUse, // ✅ هنا الإصلاح: اسم واحد فقط
-        max_tokens: 1000,
-        system: systemPrompt || 'أنت مساعد تعليمات الشركة.',
-        messages: messages || []
-      })
-    });
+    const payload = {
+      contents: contents,
+      generationConfig: { maxOutputTokens: 1000 }
+    };
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      console.error('❌ API Error:', response.status, errorData);
-      
-      // لو الخطأ في المفتاح، ارسل رسالة واضحة للمستخدم
-      if (response.status === 401) {
-        return res.status(500).json({ 
-          error: 'خطأ في مفتاح الـ API (Unauthorized)',
-          details: 'تأكد أن المفتاح صحيح ومفعل في Vercel Environment Variables'
-        });
-      }
-      return res.status(response.status).json({ error: 'فشل الاتصال بـ Anthropic' });
+    if (systemPrompt) {
+      payload.systemInstruction = { parts: [{ text: systemPrompt }] };
     }
 
+    // الاتصال بـ Google API
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_API_KEY}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
     const data = await response.json();
-    res.json(data);
+
+    if (!response.ok) {
+      return res.status(500).json({ error: 'فشل الاتصال بجوجل' });
+    }
+
+    // استخراج الرد وتجهيزه ليعمل مع الـ Frontend
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "لا يوجد رد";
+    res.json({ content: [{ text }] }); // نفس صيغة Claude عشان الموقع يشتغل
 
   } catch (err) {
-    console.error('💥 Unexpected Error:', err);
-    res.status(500).json({ error: 'خطأ داخلي في الخادم', details: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'خطأ في السيرفر' });
   }
 });
 
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
+app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
+// ✅ تصدير التطبيق لـ Vercel
 module.exports = app;
