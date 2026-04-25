@@ -7,17 +7,14 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
+// ⚠️ تأكد أن المتغير في Vercel اسمه GEMINI_API_KEY
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY; 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Tbtd@5007';
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 let storedData = { instructions: '', pdfTexts: [] };
 
 app.get('/api/instructions', (req, res) => res.json(storedData));
-
-app.post('/api/instructions', (req, res) => {
-  storedData = req.body;
-  res.json({ success: true });
-});
+app.post('/api/instructions', (req, res) => { storedData = req.body; res.json({ success: true }); });
 
 app.post('/api/verify-password', (req, res) => {
   const { password } = req.body;
@@ -28,17 +25,18 @@ app.post('/api/ask', async (req, res) => {
   const { messages, systemPrompt } = req.body;
 
   if (!GEMINI_API_KEY) {
-    return res.status(500).json({ error: 'مفتاح GEMINI_API_KEY غير موجود' });
+    return res.status(500).json({ error: 'مفتاح GEMINI_API_KEY غير موجود في الإعدادات' });
   }
 
   try {
+    // 1. تجهيز الرسائل بصيغة جوجل
     const contents = (messages || []).map(msg => ({
       role: msg.role === 'assistant' ? 'model' : 'user',
       parts: [{ text: msg.content }]
-    })).filter(m => m.parts[0]?.text?.trim());
+    }));
 
     const payload = {
-      contents,
+      contents: contents,
       generationConfig: { maxOutputTokens: 1000 }
     };
 
@@ -46,8 +44,11 @@ app.post('/api/ask', async (req, res) => {
       payload.systemInstruction = { parts: [{ text: systemPrompt }] };
     }
 
+    // 2. الاتصال بالموديل الصحيح (تم التصحيح هنا)
+    const modelName = 'gemini-1.5-flash-latest'; 
+    
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${GEMINI_API_KEY}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -58,16 +59,17 @@ app.post('/api/ask', async (req, res) => {
     const data = await response.json();
 
     if (!response.ok) {
-      console.error('Gemini error:', data);
-      return res.status(500).json({ error: 'فشل الاتصال بجوجل', details: data });
+      console.error('❌ Gemini Error:', data);
+      return res.status(500).json({ error: 'فشل الاتصال بجوجل', details: data.error?.message });
     }
 
+    // 3. استخراج الرد وإرساله
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text || 'لا يوجد رد';
     res.json({ content: [{ text }] });
 
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'خطأ في السيرفر', details: err.message });
+    res.status(500).json({ error: 'خطأ في السيرفر' });
   }
 });
 
@@ -75,4 +77,5 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+// ✅ مهم لـ Vercel: تصدير التطبيق بدون app.listen
 module.exports = app;
