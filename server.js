@@ -9,7 +9,7 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Tbtd@5007';
-// ⚠️ تم تغيير اسم المتغير ليعمل مع جوجل
+// ⚠️ تأكد أن اسم المتغير في Vercel هو GEMINI_API_KEY
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY; 
 
 let storedData = { instructions: '', pdfTexts: [] };
@@ -30,7 +30,7 @@ app.post('/api/ask', async (req, res) => {
   }
 
   try {
-    // تجهيز البيانات بصيغة Google Gemini
+    // تحويل صيغة الرسائل لتناسب Google Gemini
     const contents = messages.map(msg => ({
       role: msg.role === 'assistant' ? 'model' : 'user',
       parts: [{ text: msg.content }]
@@ -45,7 +45,7 @@ app.post('/api/ask', async (req, res) => {
       payload.systemInstruction = { parts: [{ text: systemPrompt }] };
     }
 
-    // الاتصال بـ Google API
+    // الاتصال بـ Google Gemini API
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_API_KEY}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -55,12 +55,13 @@ app.post('/api/ask', async (req, res) => {
     const data = await response.json();
 
     if (!response.ok) {
-      return res.status(500).json({ error: 'فشل الاتصال بجوجل' });
+      return res.status(500).json({ error: 'فشل الاتصال بجوجل', details: data });
     }
 
-    // استخراج الرد وتجهيزه ليعمل مع الـ Frontend
+    // استخراج الرد
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "لا يوجد رد";
-    res.json({ content: [{ text }] }); // نفس صيغة Claude عشان الموقع يشتغل
+    // إرجاع الرد بنفس الصيغة التي يتوقعها الـ Frontend
+    res.json({ content: [{ text }] }); 
 
   } catch (err) {
     console.error(err);
@@ -70,5 +71,5 @@ app.post('/api/ask', async (req, res) => {
 
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
-// ✅ تصدير التطبيق لـ Vercel
+// ✅ تصدير التطبيق لـ Vercel (بدون app.listen)
 module.exports = app;
