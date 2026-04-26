@@ -1,15 +1,12 @@
-const express = require('express');
-const router = express.Router();
+let storedData = { instructions: '', pdfTexts: [] };
 
-// Handler for GET requests
-router.get('/', (req, res) => {
-    res.send('GET request received');
-});
-
-// Handler for POST requests
-router.post('/', (req, res) => {
-    const data = req.body;
-    res.send(`POST request received with data: ${JSON.stringify(data)}`);
-});
-
-module.exports = router;
+export default function handler(req, res) {
+    if (req.method === 'GET') {
+        return res.json(storedData);
+    }
+    if (req.method === 'POST') {
+        storedData = { ...storedData, ...req.body };
+        return res.json({ success: true });
+    }
+    res.status(405).json({ error: 'Method not allowed' });
+}
